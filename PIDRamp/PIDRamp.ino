@@ -129,6 +129,9 @@ size_t readBufOffset = 0;
 //Ramp Soak
 
 double sequence[MAX_SEQUENCE_LENGTH][3];
+double sequenceGains[MAX_SEQUENCE_LENGTH][3];
+
+
 int startStep = 1;
 int currentStep;
 unsigned long timerStep; 
@@ -139,6 +142,8 @@ int maxrampSteps;
 double rampInterval;
 double rampStartInput;
 bool direction; // 0 RISE, 1 COOl
+
+bool customGainsON = false;
 
 void setup()
 {
@@ -197,7 +202,6 @@ void loop()
     nextRead += SENSOR_SAMPLING_TIME;
     // Read current temperature
     input = read_temps();
-    //      Serial.println(input);
 
     // If thermocouple problem detected
     if (isnan(input))
@@ -358,6 +362,11 @@ void initiateRamp()
   timerStep = millis() + (sequence[currentStep][PARAM_RAMPTIME] * 1000);
 
   State = STATE_RAMP;
+
+  if( customGainsON )
+  {
+      controllerPID.SetTunings( sequenceGains[currentStep][0] , sequenceGains[currentStep][1], sequenceGains[currentStep][2]);
+  }
 }
 
 void initiateSoak()
@@ -458,18 +467,34 @@ void processSerial() {
           command = strtok(0, ",");
           startStep = atoi(command);
           break;
-        case 10: //Ramp Soak Program
-          int id, param;
-          double value;
 
-          id = atoi(strtok(0, ","));
-          param = atoi(strtok(0, ","));
-
-          value = strtod(strtok(0, ","), NULL);
-
-          sequence[id][param] = value;
+        case 7: //customGains
+          command = strtok(0, ",");
+          customGainsON = atoi(command);
           break;
-        case 11: //PID Parameters
+        case 10: //Ramp Soak Program
+            int id, param;
+            double value;
+  
+            id = atoi(strtok(0, ","));
+            param = atoi(strtok(0, ","));
+  
+            value = strtod(strtok(0, ","), NULL);
+  
+            sequence[id][param] = value;
+          break;
+        case 11: //Ramp Soak Program Custom PID
+//            int id, param;
+//            double value;
+  
+            id = atoi(strtok(0, ","));
+            param = atoi(strtok(0, ","));
+  
+            value = strtod(strtok(0, ","), NULL);
+  
+            sequenceGains[id][param] = value;
+          break;          
+        case 12: //PID Parameters
 
           kp = strtod(strtok(0, ","), NULL);
           ki = strtod(strtok(0, ","), NULL);
