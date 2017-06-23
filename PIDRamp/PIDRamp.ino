@@ -365,7 +365,11 @@ void initiateRamp()
 
   if( customGainsON )
   {
-      controllerPID.SetTunings( sequenceGains[currentStep][0] , sequenceGains[currentStep][1], sequenceGains[currentStep][2]);
+    kp = sequenceGains[currentStep][0];
+    ki = sequenceGains[currentStep][1];
+    kd = sequenceGains[currentStep][2];
+    
+    controllerPID.SetTunings( kp, ki, kd);
   }
 }
 
@@ -422,6 +426,16 @@ void processSerial() {
         case 7: //setpoint
           Serial.print("3,7,");
           Serial.print(setpoint);
+          Serial.print('\n');
+          break;
+
+        case 8: //setpoint
+          Serial.print("3,8,");
+          Serial.print(kp);
+          Serial.print(",");
+          Serial.print(ki);
+          Serial.print(",");
+          Serial.print(kd);
           Serial.print('\n');
           break;
         case 10:
@@ -484,13 +498,13 @@ void processSerial() {
             sequence[id][param] = value;
           break;
         case 11: //Ramp Soak Program Custom PID
-//            int id, param;
-//            double value;
+            int id2, param2;
+            double value2;
   
-            id = atoi(strtok(0, ","));
-            param = atoi(strtok(0, ","));
+            id2 = atoi(strtok(0, ","));
+            param2 = atoi(strtok(0, ","));
   
-            value = strtod(strtok(0, ","), NULL);
+            value2 = strtod(strtok(0, ","), NULL);
   
             sequenceGains[id][param] = value;
           break;          
