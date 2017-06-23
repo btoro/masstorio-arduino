@@ -86,7 +86,7 @@ double output;
 double kp = PID_KP;
 double ki = PID_KI;
 double kd = PID_KD;
-int windowSize;
+int windowSize = 5000;
 unsigned long windowStartTime;
 unsigned long nextCheck;
 unsigned long nextRead;
@@ -159,15 +159,15 @@ void setup()
   // Serial communication at 57600 bps
   Serial.begin(57600);
 
-  // Set window size
-  windowSize = 2000;
   // Initialize time keeping variable
   nextCheck = millis();
   // Initialize thermocouple reading variable
   nextRead = millis();
-  
-    controllerPID.SetOutputLimits(0, windowSize);
-    controllerPID.SetMode(AUTOMATIC);
+
+  windowStartTime = millis();
+
+  controllerPID.SetOutputLimits(0, windowSize);
+  controllerPID.SetMode(AUTOMATIC);
 }
 
 void loop()
@@ -293,11 +293,9 @@ void loop()
 
     // PID computation and SSR control
 
-    now = millis();
 
 //    bool didcalc;
 //    didcalc = 
-    controllerPID.Compute();
 //
 //    if( didcalc )
 //    {
@@ -308,6 +306,9 @@ void loop()
 //       Serial.print("Nope!!\n");
 //    }
 
+    now = millis();
+    controllerPID.Compute();
+    
     if ((now - windowStartTime) > windowSize)
     {
       // Time to shift the Relay Window
@@ -415,7 +416,14 @@ void processSerial() {
           break;
         case 4: //Ramp Soak Time
           Serial.print("3,4,");
-          Serial.print( (timerStep-millis()) );
+          if( millis() > timerStep )
+          {
+            Serial.print( (millis()-timerStep) );
+          }
+          else
+          {
+            Serial.print( (timerStep-millis()) );
+          }
           Serial.print('\n');
           break;
         case 5: //Status
@@ -506,7 +514,7 @@ void processSerial() {
   
             value2 = strtod(strtok(0, ","), NULL);
   
-            sequenceGains[id][param] = value;
+            sequenceGains[id2][param2] = value2;
           break;          
         case 12: //PID Parameters
 
