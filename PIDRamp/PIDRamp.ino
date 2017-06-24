@@ -1,6 +1,17 @@
 
 // ***** INCLUDES *****
 #include <PID_v1.h>
+#include <PID_AutoTune_v0.h>
+
+// AUTO Tune
+
+byte ATuneModeRemember=2;
+
+double outputStart=5;
+double aTuneStep=50, aTuneNoise=1, aTuneStartValue=100;
+unsigned int aTuneLookBack=20;
+
+boolean tuning = false;
 
 // ***** TYPE DEFINITIONS *****
 typedef enum STATE
@@ -29,7 +40,6 @@ typedef enum SEQUENCE_PARAMS
 } Sequence_t;
 
 
-
 typedef enum SWITCH
 {
   SWITCH_NONE,
@@ -45,15 +55,8 @@ typedef enum DEBOUNCE_STATE
 } debounceState_t;
 
 // ***** CONSTANTS *****
-#define TEMPERATURE_ROOM 50
-#define TEMPERATURE_SOAK_MIN 0
-#define TEMPERATURE_SOAK_MAX 100
-#define TEMPERATURE_REFLOW_MAX 250
-#define TEMPERATURE_COOL_MIN 100
 #define SENSOR_SAMPLING_TIME 1000
 #define SOAK_TEMPERATURE_STEP 5
-#define SOAK_MICRO_PERIOD 9000
-#define DEBOUNCE_PERIOD_MIN 50
 #define MAX_SEQUENCE_LENGTH 50
 
 // ***** PID PARAMETERS *****
@@ -61,16 +64,7 @@ typedef enum DEBOUNCE_STATE
 #define PID_KP 20
 #define PID_KI 0.1
 #define PID_KD 0
-// ***** SOAKING STAGE *****
-//#define PID_KP_SOAK 300
-//#define PID_KI_SOAK 0.05
-//#define PID_KD_SOAK 250
-//// ***** REFLOW STAGE *****
-//#define PID_KP_REFLOW 300
-//#define PID_KI_REFLOW 0.05
-//#define PID_KD_REFLOW 350
 
-#define PID_SAMPLE_TIME 1000
 
 // ***** PIN ASSIGNMENT *****
 int ssrPin = 5;
@@ -110,6 +104,8 @@ int timerSeconds;
 
 // Specify PID control interface
 PID controllerPID(&input, &output, &setpoint, kp, ki, kd, DIRECT);
+PID_ATune aTune(&input, &output);
+
 
 // Temperature Reading Constants
 const float A_value = 1.285E-3;
@@ -168,6 +164,10 @@ void setup()
 
   controllerPID.SetOutputLimits(0, windowSize);
   controllerPID.SetMode(AUTOMATIC);
+
+  //Autotune 
+
+  
 }
 
 void loop()
@@ -212,38 +212,6 @@ void loop()
       //Serial.println("Error No read");
     }
   }
-
-//  if (millis() > nextCheck)
-//  {
-//    //          Serial.print("Test 2  ");
-//    //          Serial.println(reflowStatus);
-//
-//
-//    // Check input in the next seconds
-//    nextCheck += 1000;
-//    // If reflow process is on going
-//    if (Status == STATUS_ON)
-//    {
-//      // Toggle red LED as system heart beat
-//      digitalWrite(ledRedPin, !(digitalRead(ledRedPin)));
-//      // Increase seconds timer for reflow curve analysis
-//      timerSeconds++;
-//      // Send temperature and time stamp to serial
-//      //      Serial.print(timerSeconds);
-//      //      Serial.print(" ");
-//      //      Serial.print(setpoint);
-//      //      Serial.print(" ");
-//      //      Serial.print(input);
-//      //      Serial.print(" ");
-//      //      Serial.println(output);
-//    }
-//    else
-//    {
-//      // Turn off red LED
-//      digitalWrite(ledRedPin, HIGH);
-//    }
-//  }
-
 
   if (Status == STATUS_ON)
   {
@@ -293,21 +261,28 @@ void loop()
 
     // PID computation and SSR control
 
+    if(tuning)
+    {
+      byte val = (aTune.Runtime());
+      if (val!=0)
+      {
+        tuning = false;
+      }
+      if(!tuning)
+      { //we're done, set the tuning parameters
+        kp = aTune.GetKp();
+        ki = aTune.GetKi();
+        kd = aTune.GetKd();
+        controllerPID.SetTunings(kp,ki,kd);
+        AutoTuneHelper(false);
+      }
+    }
+    else
+    {
 
-//    bool didcalc;
-//    didcalc = 
-//
-//    if( didcalc )
-//    {
-//
-//       Serial.print("Calculating!!\n");
-//    }else
-//    {
-//       Serial.print("Nope!!\n");
-//    }
-
-    now = millis();
-    controllerPID.Compute();
+      now = millis();
+      controllerPID.Compute();
+    }
     
     if ((now - windowStartTime) > windowSize)
     {
@@ -317,14 +292,13 @@ void loop()
     }
     if (output > (now - windowStartTime)) digitalWrite(ssrPin, HIGH);
     else digitalWrite(ssrPin, LOW);
+    
   }
   // Make sure heaters are off
   else
   {
     digitalWrite(ssrPin, LOW);
   }
-
-
 }
 
 void initiateRun()
@@ -494,6 +468,10 @@ void processSerial() {
           command = strtok(0, ",");
           customGainsON = atoi(command);
           break;
+        case 8: //autotune
+          command = strtok(0, ",");
+          switchAutoTune( atoi(command) );
+          break;
         case 10: //Ramp Soak Program
             int id, param;
             double value;
@@ -542,4 +520,32 @@ double read_temps(void)
 
   t_read = t_read - 273.15;
   return t_read;
+}
+
+void switchAutoTune( int mode )
+{
+  if( mode == 1 && !tuning)
+  {
+    //Set the output to the desired starting frequency.
+    output=aTuneStartValue;
+    aTune.SetNoiseBand(aTuneNoise);
+    aTune.SetOutputStep(aTuneStep);
+    aTune.SetLookbackSec((int)aTuneLookBack);
+    AutoTuneHelper(true);
+    tuning = true;
+  }
+  else if( mode == 0 )
+  { //cancel autotune
+    aTune.Cancel();
+    tuning = false;
+    AutoTuneHelper(false);
+  }
+}
+
+void AutoTuneHelper(boolean start)
+{
+  if(start)
+    ATuneModeRemember = controllerPID.GetMode();
+  else
+    controllerPID.SetMode(ATuneModeRemember);
 }
