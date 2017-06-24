@@ -5,9 +5,8 @@
 
 // AUTO Tune
 
-byte ATuneModeRemember=2;
+byte ATuneModeRemember=1;
 
-double outputStart=5;
 double aTuneStep=50, aTuneNoise=1, aTuneStartValue=100;
 unsigned int aTuneLookBack=20;
 
@@ -21,7 +20,8 @@ typedef enum STATE
   STATE_ACTIVE, // ready for Ramp soak program
   STATE_RAMP, // is ramping
   STATE_SOAK, // is soaking
-  STATE_ERROR // no T read
+  STATE_ERROR, // no T read
+  STATE_AUTOTUNE //6
 } State_t;
 
 typedef enum STATUS
@@ -267,6 +267,7 @@ void loop()
       if (val!=0)
       {
         tuning = false;
+        State = STATE_INACTIVE;
       }
       if(!tuning)
       { //we're done, set the tuning parameters
@@ -277,12 +278,11 @@ void loop()
         AutoTuneHelper(false);
       }
     }
-    else
-    {
+    else controllerPID.Compute();
+    
 
-      now = millis();
-      controllerPID.Compute();
-    }
+    now = millis();
+
     
     if ((now - windowStartTime) > windowSize)
     {
@@ -383,7 +383,7 @@ void processSerial() {
           Serial.print(output);
           Serial.print('\n');
           break;
-        case 3: //State
+        case 3:  // State INACTIVE, ...
           Serial.print("3,3,");
           Serial.print(State);
           Serial.print('\n');
@@ -400,7 +400,7 @@ void processSerial() {
           }
           Serial.print('\n');
           break;
-        case 5: //Status
+        case 5:  // Status ON or oFF
           Serial.print("3,5,");
           Serial.print(Status);
           Serial.print('\n');
@@ -411,7 +411,7 @@ void processSerial() {
           Serial.print('\n');
           break;
 
-        case 8: //setpoint
+        case 8: //PID
           Serial.print("3,8,");
           Serial.print(kp);
           Serial.print(",");
@@ -446,11 +446,11 @@ void processSerial() {
       action = atoi(command);
       switch (action)
       {
-        case 3: // State
+        case 3: // State INACTIVE, ...
           command = strtok(0, ",");
           State = atoi(command);
           break;
-        case 5: // Status
+        case 5: // Status ON or oFF
           action = atoi( strtok(0, ",") );
           
           Status =  action;
@@ -458,6 +458,7 @@ void processSerial() {
           {
             initiateRun();
           }
+          if( Status == STATUS_OFF) output = 0;
           break;
         case 6: // startStep
           command = strtok(0, ",");
@@ -471,6 +472,9 @@ void processSerial() {
         case 8: //autotune
           command = strtok(0, ",");
           switchAutoTune( atoi(command) );
+          break;
+        case 9: //setpoint
+          setpoint =  strtod(strtok(0, ","), NULL);
           break;
         case 10: //Ramp Soak Program
             int id, param;
@@ -526,6 +530,8 @@ void switchAutoTune( int mode )
 {
   if( mode == 1 && !tuning)
   {
+    Status = STATUS_ON;
+    State = STATE_AUTOTUNE;
     //Set the output to the desired starting frequency.
     output=aTuneStartValue;
     aTune.SetNoiseBand(aTuneNoise);
@@ -536,6 +542,8 @@ void switchAutoTune( int mode )
   }
   else if( mode == 0 )
   { //cancel autotune
+    Status = STATUS_OFF;
+    State = STATE_AUTOTUNE;
     aTune.Cancel();
     tuning = false;
     AutoTuneHelper(false);
