@@ -5,10 +5,10 @@
 
 // AUTO Tune
 
-byte ATuneModeRemember=1;
+byte ATuneModeRemember = 1;
 
-double aTuneStep=50, aTuneNoise=1, aTuneStartValue=100;
-unsigned int aTuneLookBack=20;
+double aTuneStep = 50, aTuneNoise = 1, aTuneStartValue = 100;
+unsigned int aTuneLookBack = 20;
 
 boolean tuning = false;
 
@@ -128,9 +128,9 @@ double sequence[MAX_SEQUENCE_LENGTH][3];
 double sequenceGains[MAX_SEQUENCE_LENGTH][3];
 
 
-int startStep = 1;
+int startStep = 0;
 int currentStep;
-unsigned long timerStep; 
+unsigned long timerStep;
 unsigned long cycleTime = 5000; // 5sec cycle time
 
 int rampStep;
@@ -165,9 +165,9 @@ void setup()
   controllerPID.SetOutputLimits(0, windowSize);
   controllerPID.SetMode(AUTOMATIC);
 
-  //Autotune 
+  //Autotune
 
-  
+
 }
 
 void loop()
@@ -226,10 +226,10 @@ void loop()
           if ( (rampStep + 1) <= maxrampSteps )
           {
             rampStep++;
-            setpoint = rampStartInput + (rampInterval*rampStep);
+            setpoint = rampStartInput + (rampInterval * rampStep);
           }
           // Check to see if Soak temperature is reached. If so, then soak.
-          if ( ( ( input > sequence[currentStep][PARAM_SETPOINT] ) && direction == 0 ) || ( ( input < sequence[currentStep][PARAM_SETPOINT] ) && direction == 1 )  )
+          else if ( ( ( input > sequence[currentStep][PARAM_SETPOINT] ) && direction == 0 ) || ( ( input < sequence[currentStep][PARAM_SETPOINT] ) && direction == 1 )  )
           {
             initiateSoak();
           }
@@ -261,29 +261,29 @@ void loop()
 
     // PID computation and SSR control
 
-    if(tuning)
+    if (tuning)
     {
       byte val = (aTune.Runtime());
-      if (val!=0)
+      if (val != 0)
       {
         tuning = false;
         State = STATE_INACTIVE;
       }
-      if(!tuning)
+      if (!tuning)
       { //we're done, set the tuning parameters
         kp = aTune.GetKp();
         ki = aTune.GetKi();
         kd = aTune.GetKd();
-        controllerPID.SetTunings(kp,ki,kd);
+        controllerPID.SetTunings(kp, ki, kd);
         AutoTuneHelper(false);
       }
     }
     else controllerPID.Compute();
-    
+
 
     now = millis();
 
-    
+
     if ((now - windowStartTime) > windowSize)
     {
       // Time to shift the Relay Window
@@ -292,7 +292,7 @@ void loop()
     }
     if (output > (now - windowStartTime)) digitalWrite(ssrPin, HIGH);
     else digitalWrite(ssrPin, LOW);
-    
+
   }
   // Make sure heaters are off
   else
@@ -313,7 +313,7 @@ void initiateRun()
 
       case STATE_ACTIVE:  // We begin a new RAMP SOAK Cycle
         Status = STATUS_ON;
-
+        currentStep = startStep;
         initiateRamp();
 
         break;
@@ -327,31 +327,51 @@ void initiateRamp()
   rampStartInput = input;
 
   deltaSetpoint =  sequence[currentStep][PARAM_SETPOINT] - rampStartInput;
-  maxrampSteps = (sequence[currentStep][PARAM_RAMPTIME] * 1000) / cycleTime;
 
-  rampInterval =  deltaSetpoint / maxrampSteps;
-  rampStep = 0;
+  if ( sequence[currentStep][PARAM_RAMPTIME] == 0 )
+  {
+     setpoint = sequence[currentStep][PARAM_SETPOINT];
+     timerStep = millis();
 
-  setpoint = rampStartInput;
+     maxrampSteps = 0;
+     rampStep = 0;
+  }
+  else
+  {
+    maxrampSteps = (sequence[currentStep][PARAM_RAMPTIME] * 1000) / cycleTime;
   
-  timerStep = millis() + (sequence[currentStep][PARAM_RAMPTIME] * 1000);
+    rampInterval =  deltaSetpoint / maxrampSteps;
+    rampStep = 0;
+  
+    setpoint = rampStartInput;
+
+    timerStep = millis() + (sequence[currentStep][PARAM_RAMPTIME] * 1000);
+  }
 
   State = STATE_RAMP;
 
-  if( customGainsON )
+  if ( customGainsON )
   {
     kp = sequenceGains[currentStep][0];
     ki = sequenceGains[currentStep][1];
     kd = sequenceGains[currentStep][2];
-    
+
     controllerPID.SetTunings( kp, ki, kd);
   }
 }
 
 void initiateSoak()
 {
-  State = STATE_SOAK;
-  timerStep = millis() + (sequence[currentStep][PARAM_SOAKTIME] * 1000);
+    if( sequence[currentStep][PARAM_SOAKTIME] == 0 )
+    {
+      State = STATE_ISO;
+      timerStep = millis();
+    }
+    else
+    {
+      State = STATE_SOAK;
+      timerStep = millis() + (sequence[currentStep][PARAM_SOAKTIME] * 1000);
+    }
 }
 
 
@@ -390,13 +410,13 @@ void processSerial() {
           break;
         case 4: //Ramp Soak Time
           Serial.print("3,4,");
-          if( millis() > timerStep )
+          if ( millis() > timerStep )
           {
-            Serial.print( (millis()-timerStep) );
+            Serial.print( (millis() - timerStep) );
           }
           else
           {
-            Serial.print( (timerStep-millis()) );
+            Serial.print( (timerStep - millis()) );
           }
           Serial.print('\n');
           break;
@@ -422,8 +442,7 @@ void processSerial() {
           break;
         case 10:
           int id, param;
-          double value;
-
+          
           id = atoi(strtok(0, ","));
           param = atoi(strtok(0, ","));
 
@@ -436,6 +455,25 @@ void processSerial() {
           Serial.print('\n');
 
           break;
+        case 11:
+          int id2, param2;
+          id2 = atoi(strtok(0, ","));
+          param2 = atoi(strtok(0, ","));
+
+          Serial.print("3,11,");
+          Serial.print(id);
+          Serial.print(",");
+          Serial.print(param);
+          Serial.print(",");
+          Serial.print( sequenceGains[id][param] );
+          Serial.print('\n');
+
+          break;
+        case 12: //get current steps
+          Serial.print("3,12,");
+          Serial.print(currentStep);
+          Serial.print('\n');
+          break;      
       }
 
 
@@ -452,13 +490,13 @@ void processSerial() {
           break;
         case 5: // Status ON or oFF
           action = atoi( strtok(0, ",") );
-          
+
           Status =  action;
-          if( Status == STATUS_INITIATE )
+          if ( Status == STATUS_INITIATE )
           {
             initiateRun();
           }
-          if( Status == STATUS_OFF) output = 0;
+          else if ( Status == STATUS_OFF) output = 0;
           break;
         case 6: // startStep
           command = strtok(0, ",");
@@ -477,27 +515,27 @@ void processSerial() {
           setpoint =  strtod(strtok(0, ","), NULL);
           break;
         case 10: //Ramp Soak Program
-            int id, param;
-            double value;
-  
-            id = atoi(strtok(0, ","));
-            param = atoi(strtok(0, ","));
-  
-            value = strtod(strtok(0, ","), NULL);
-  
-            sequence[id][param] = value;
+          int id, param;
+          double value;
+
+          id = atoi(strtok(0, ","));
+          param = atoi(strtok(0, ","));
+
+          value = strtod(strtok(0, ","), NULL);
+
+          sequence[id][param] = value;
           break;
         case 11: //Ramp Soak Program Custom PID
-            int id2, param2;
-            double value2;
-  
-            id2 = atoi(strtok(0, ","));
-            param2 = atoi(strtok(0, ","));
-  
-            value2 = strtod(strtok(0, ","), NULL);
-  
-            sequenceGains[id2][param2] = value2;
-          break;          
+          int id2, param2;
+          double value2;
+
+          id2 = atoi(strtok(0, ","));
+          param2 = atoi(strtok(0, ","));
+
+          value2 = strtod(strtok(0, ","), NULL);
+
+          sequenceGains[id2][param2] = value2;
+          break;
         case 12: //PID Parameters
 
           kp = strtod(strtok(0, ","), NULL);
@@ -528,19 +566,19 @@ double read_temps(void)
 
 void switchAutoTune( int mode )
 {
-  if( mode == 1 && !tuning)
+  if ( mode == 1 && !tuning)
   {
     Status = STATUS_ON;
     State = STATE_AUTOTUNE;
     //Set the output to the desired starting frequency.
-    output=aTuneStartValue;
+    output = aTuneStartValue;
     aTune.SetNoiseBand(aTuneNoise);
     aTune.SetOutputStep(aTuneStep);
     aTune.SetLookbackSec((int)aTuneLookBack);
     AutoTuneHelper(true);
     tuning = true;
   }
-  else if( mode == 0 )
+  else if ( mode == 0 )
   { //cancel autotune
     Status = STATUS_OFF;
     State = STATE_AUTOTUNE;
@@ -552,7 +590,7 @@ void switchAutoTune( int mode )
 
 void AutoTuneHelper(boolean start)
 {
-  if(start)
+  if (start)
     ATuneModeRemember = controllerPID.GetMode();
   else
     controllerPID.SetMode(ATuneModeRemember);
