@@ -7,7 +7,7 @@
 //ADC
 ADC_prescaler_t ADCSpeed = ADC_FAST;
 byte bitsOfResolution = 14; //commanded oversampled resolution
-unsigned long numSamplesToAvg = 1; //number of samples AT THE OVERSAMPLED RESOLUTION that you want to take and average
+unsigned long numSamplesToAvg = 3; //number of samples AT THE OVERSAMPLED RESOLUTION that you want to take and average
 
 
 
