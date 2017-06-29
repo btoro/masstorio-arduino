@@ -2,6 +2,14 @@
 // ***** INCLUDES *****
 #include <PID_v1.h>
 #include <PID_AutoTune_v0.h>
+#include <eRCaGuy_NewAnalogRead.h>
+
+//ADC
+ADC_prescaler_t ADCSpeed = ADC_FAST;
+byte bitsOfResolution = 14; //commanded oversampled resolution
+unsigned long numSamplesToAvg = 1; //number of samples AT THE OVERSAMPLED RESOLUTION that you want to take and average
+
+
 
 // AUTO Tune
 
@@ -168,7 +176,10 @@ void setup()
 
   controllerPID.SetTunings( kp, ki, kd, P_ON_E );
 
-  //Autotune
+  //ADC
+  adc.setADCSpeed(ADCSpeed);
+  adc.setBitsOfResolution(bitsOfResolution);
+  adc.setNumSamplesToAvg(numSamplesToAvg);
 
 
 }
@@ -564,9 +575,10 @@ void processSerial() {
 
 double read_temps(void)
 {
-  int input = analogRead(tempPin);
-
-  double a = 1.0 - ((double)input / 1024.0);
+ // int input = analogRead(tempPin);
+  double input = adc.newAnalogRead( tempPin ); 
+  
+  double a = 1.0 - (input /  adc.getMaxPossibleReading() );
   double R = (SERIESRESISTOR - (a * SERIESRESISTOR)) / a;
 
 
