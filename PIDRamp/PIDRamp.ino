@@ -55,7 +55,7 @@ typedef enum DEBOUNCE_STATE
 } debounceState_t;
 
 // ***** CONSTANTS *****
-#define SENSOR_SAMPLING_TIME 1000
+#define SENSOR_SAMPLING_TIME 200
 #define SOAK_TEMPERATURE_STEP 5
 #define MAX_SEQUENCE_LENGTH 50
 
@@ -163,7 +163,10 @@ void setup()
   windowStartTime = millis();
 
   controllerPID.SetOutputLimits(0, windowSize);
+  controllerPID.SetSampleTime( SENSOR_SAMPLING_TIME );
   controllerPID.SetMode(AUTOMATIC);
+
+  controllerPID.SetTunings( kp, ki, kd, P_ON_E );
 
   //Autotune
 
@@ -274,7 +277,7 @@ void loop()
         kp = aTune.GetKp();
         ki = aTune.GetKi();
         kd = aTune.GetKd();
-        controllerPID.SetTunings(kp, ki, kd);
+        controllerPID.SetTunings(kp, ki, kd , P_ON_E );
         AutoTuneHelper(false);
       }
     }
@@ -305,6 +308,8 @@ void initiateRun()
 {
   if ( Status == STATUS_INITIATE )
   {
+    windowStartTime = millis();
+    output = 0;
     switch ( State )
     {
       case STATE_ISO: // Here we start a new setpoint
@@ -356,7 +361,7 @@ void initiateRamp()
     ki = sequenceGains[currentStep][1];
     kd = sequenceGains[currentStep][2];
 
-    controllerPID.SetTunings( kp, ki, kd);
+    controllerPID.SetTunings( kp, ki, kd, P_ON_E );
   }
 }
 
@@ -542,7 +547,15 @@ void processSerial() {
           ki = strtod(strtok(0, ","), NULL);
           kd = strtod(strtok(0, ","), NULL);
 
-          controllerPID.SetTunings( kp, ki, kd);
+          controllerPID.SetTunings( kp, ki, kd, P_ON_E );
+          break;
+
+        case 13: // auto /man modes
+          command = strtok(0, ",");
+          controllerPID.SetMode( atoi(command) );
+          break;
+        case 14: // set output
+          output = strtod(strtok(0, ","), NULL);
           break;
       }
       break;
