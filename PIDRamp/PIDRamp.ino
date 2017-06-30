@@ -9,10 +9,7 @@ ADC_prescaler_t ADCSpeed = ADC_FAST;
 byte bitsOfResolution = 14; //commanded oversampled resolution
 unsigned long numSamplesToAvg = 3; //number of samples AT THE OVERSAMPLED RESOLUTION that you want to take and average
 
-
-
 // AUTO Tune
-
 byte ATuneModeRemember = 1;
 
 double aTuneStep = 50, aTuneNoise = 1, aTuneStartValue = 100;
@@ -234,19 +231,25 @@ void loop()
     {
       case STATE_RAMP:
         // check if cycle is passed
-        if (millis() > nextCheck)
+//        if (millis() > nextCheck)
+//        {
+//          nextCheck = millis() + cycleTime;
+//          if ( (rampStep + 1) <= maxrampSteps )
+//          {
+//            rampStep++;
+//            setpoint = rampStartInput + (rampInterval * rampStep);
+//          }
+//          // Check to see if Soak temperature is reached. If so, then soak.
+//          else if ( ( ( input > sequence[currentStep][PARAM_SETPOINT] ) && direction == 0 ) || ( ( input < sequence[currentStep][PARAM_SETPOINT] ) && direction == 1 )  )
+//          {
+//            initiateSoak();
+//          }
+//        }
+        if (millis() > timerStep) // Soak is complete
         {
-          nextCheck = millis() + cycleTime;
-          if ( (rampStep + 1) <= maxrampSteps )
-          {
-            rampStep++;
-            setpoint = rampStartInput + (rampInterval * rampStep);
-          }
-          // Check to see if Soak temperature is reached. If so, then soak.
-          else if ( ( ( input > sequence[currentStep][PARAM_SETPOINT] ) && direction == 0 ) || ( ( input < sequence[currentStep][PARAM_SETPOINT] ) && direction == 1 )  )
-          {
-            initiateSoak();
-          }
+          output = 0; // go to next step
+          controllerPID.SetMode( AUTOMATIC );
+          initiateSoak();
         }
         break;
 
@@ -337,6 +340,27 @@ void initiateRun()
   }
 }
 
+void initiateManualRamp()
+{
+  controllerPID.SetMode( MANUAL );
+
+  timerStep = millis() + (sequence[currentStep][PARAM_RAMPTIME] * 1000);
+  setpoint = sequence[currentStep][PARAM_SETPOINT];
+
+  output = windowSize;
+
+  State = STATE_RAMP;
+
+  if ( customGainsON )
+  {
+    kp = sequenceGains[currentStep][0];
+    ki = sequenceGains[currentStep][1];
+    kd = sequenceGains[currentStep][2];
+
+    controllerPID.SetTunings( kp, ki, kd );
+  }
+}
+
 void initiateRamp()
 {
   double deltaSetpoint;
@@ -346,19 +370,19 @@ void initiateRamp()
 
   if ( sequence[currentStep][PARAM_RAMPTIME] == 0 )
   {
-     setpoint = sequence[currentStep][PARAM_SETPOINT];
-     timerStep = millis();
+    setpoint = sequence[currentStep][PARAM_SETPOINT];
+    timerStep = millis();
 
-     maxrampSteps = 0;
-     rampStep = 0;
+    maxrampSteps = 0;
+    rampStep = 0;
   }
   else
   {
     maxrampSteps = (sequence[currentStep][PARAM_RAMPTIME] * 1000) / cycleTime;
-  
+
     rampInterval =  deltaSetpoint / maxrampSteps;
     rampStep = 0;
-  
+
     setpoint = rampStartInput;
 
     timerStep = millis() + (sequence[currentStep][PARAM_RAMPTIME] * 1000);
@@ -378,16 +402,16 @@ void initiateRamp()
 
 void initiateSoak()
 {
-    if( sequence[currentStep][PARAM_SOAKTIME] == 0 )
-    {
-      State = STATE_ISO;
-      timerStep = millis();
-    }
-    else
-    {
-      State = STATE_SOAK;
-      timerStep = millis() + (sequence[currentStep][PARAM_SOAKTIME] * 1000);
-    }
+  if ( sequence[currentStep][PARAM_SOAKTIME] == 0 )
+  {
+    State = STATE_ISO;
+    timerStep = millis();
+  }
+  else
+  {
+    State = STATE_SOAK;
+    timerStep = millis() + (sequence[currentStep][PARAM_SOAKTIME] * 1000);
+  }
 }
 
 
@@ -458,7 +482,7 @@ void processSerial() {
           break;
         case 10:
           int id, param;
-          
+
           id = atoi(strtok(0, ","));
           param = atoi(strtok(0, ","));
 
@@ -489,7 +513,7 @@ void processSerial() {
           Serial.print("3,12,");
           Serial.print(currentStep);
           Serial.print('\n');
-          break;      
+          break;
       }
 
 
@@ -575,9 +599,9 @@ void processSerial() {
 
 double read_temps(void)
 {
- // int input = analogRead(tempPin);
-  double input = adc.newAnalogRead( tempPin ); 
-  
+  // int input = analogRead(tempPin);
+  double input = adc.newAnalogRead( tempPin );
+
   double a = 1.0 - (input /  adc.getMaxPossibleReading() );
   double R = (SERIESRESISTOR - (a * SERIESRESISTOR)) / a;
 
