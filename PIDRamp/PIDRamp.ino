@@ -258,7 +258,7 @@ void loop()
         if (millis() > timerStep) // Soak is complete
         {
           currentStep++; // go to next step
-          initiateRamp();
+          initiateManualRamp();
         }
         break;
       case STATE_ERROR:
@@ -333,7 +333,7 @@ void initiateRun()
       case STATE_ACTIVE:  // We begin a new RAMP SOAK Cycle
         Status = STATUS_ON;
         currentStep = startStep;
-        initiateRamp();
+        initiateManualRamp();
 
         break;
     }
@@ -361,57 +361,57 @@ void initiateManualRamp()
   }
 }
 
-void initiateRamp()
-{
-  double deltaSetpoint;
-  rampStartInput = input;
-
-  deltaSetpoint =  sequence[currentStep][PARAM_SETPOINT] - rampStartInput;
-
-  if ( sequence[currentStep][PARAM_RAMPTIME] == 0 )
-  {
-    setpoint = sequence[currentStep][PARAM_SETPOINT];
-    timerStep = millis();
-
-    maxrampSteps = 0;
-    rampStep = 0;
-  }
-  else
-  {
-    maxrampSteps = (sequence[currentStep][PARAM_RAMPTIME] * 1000) / cycleTime;
-
-    rampInterval =  deltaSetpoint / maxrampSteps;
-    rampStep = 0;
-
-    setpoint = rampStartInput;
-
-    timerStep = millis() + (sequence[currentStep][PARAM_RAMPTIME] * 1000);
-  }
-
-  State = STATE_RAMP;
-
-  if ( customGainsON )
-  {
-    kp = sequenceGains[currentStep][0];
-    ki = sequenceGains[currentStep][1];
-    kd = sequenceGains[currentStep][2];
-
-    controllerPID.SetTunings( kp, ki, kd, P_ON_E );
-  }
-}
+//void initiateRamp()
+//{
+//  double deltaSetpoint;
+//  rampStartInput = input;
+//
+//  deltaSetpoint =  sequence[currentStep][PARAM_SETPOINT] - rampStartInput;
+//
+//  if ( sequence[currentStep][PARAM_RAMPTIME] == 0 )
+//  {
+//    setpoint = sequence[currentStep][PARAM_SETPOINT];
+//    timerStep = millis();
+//
+//    maxrampSteps = 0;
+//    rampStep = 0;
+//  }
+//  else
+//  {
+//    maxrampSteps = (sequence[currentStep][PARAM_RAMPTIME] * 1000) / cycleTime;
+//
+//    rampInterval =  deltaSetpoint / maxrampSteps;
+//    rampStep = 0;
+//
+//    setpoint = rampStartInput;
+//
+//    timerStep = millis() + (sequence[currentStep][PARAM_RAMPTIME] * 1000);
+//  }
+//
+//  State = STATE_RAMP;
+//
+//  if ( customGainsON )
+//  {
+//    kp = sequenceGains[currentStep][0];
+//    ki = sequenceGains[currentStep][1];
+//    kd = sequenceGains[currentStep][2];
+//
+//    controllerPID.SetTunings( kp, ki, kd, P_ON_E );
+//  }
+//}
 
 void initiateSoak()
 {
-  if ( sequence[currentStep][PARAM_SOAKTIME] == 0 )
-  {
-    State = STATE_ISO;
-    timerStep = millis();
-  }
-  else
-  {
+//  if ( sequence[currentStep][PARAM_SOAKTIME] == 0 )
+//  {
+//    State = STATE_ISO;
+//    timerStep = millis();
+//  }
+//  else
+//  {
     State = STATE_SOAK;
     timerStep = millis() + (sequence[currentStep][PARAM_SOAKTIME] * 1000);
-  }
+//  }
 }
 
 
