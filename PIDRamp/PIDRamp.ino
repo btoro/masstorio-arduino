@@ -26,7 +26,8 @@ typedef enum STATE
   STATE_RAMP, // is ramping
   STATE_SOAK, // is soaking
   STATE_ERROR, // no T read
-  STATE_AUTOTUNE //6
+  STATE_AUTOTUNE, //6
+  STATE_HIGHTEMP
 } State_t;
 
 typedef enum STATUS
@@ -63,7 +64,8 @@ typedef enum DEBOUNCE_STATE
 #define SENSOR_SAMPLING_TIME 200
 #define SOAK_TEMPERATURE_STEP 5
 #define MAX_SEQUENCE_LENGTH 50
-
+#define MAX_TEMP 105
+#define MIN_TEMP -200
 // ***** PID PARAMETERS *****
 // ***** PRE-HEAT STAGE *****
 #define PID_KP 20
@@ -135,6 +137,9 @@ double sequenceGains[MAX_SEQUENCE_LENGTH][3];
 
 int startStep = 0;
 int currentStep;
+int totalSteps = 0;
+
+
 unsigned long timerStep;
 unsigned long cycleTime = 5000; // 5sec cycle time
 
@@ -221,6 +226,17 @@ void loop()
       State = STATE_ERROR;
       Status = STATUS_OFF;
       //Serial.println("Error No read");
+    }
+
+    if( input > MAX_TEMP )
+    {
+      State = STATE_HIGHTEMP;
+      Status = STATUS_OFF;
+    }
+    if( input < MIN_TEMP )
+    {
+      State = STATE_HIGHTEMP;
+      Status = STATUS_OFF;
     }
   }
 
@@ -342,22 +358,29 @@ void initiateRun()
 
 void initiateManualRamp()
 {
-  controllerPID.SetMode( MANUAL );
-
-  timerStep = millis() + (sequence[currentStep][PARAM_RAMPTIME] * 1000);
-  setpoint = sequence[currentStep][PARAM_SETPOINT];
-
-  output = windowSize;
-
-  State = STATE_RAMP;
-
-  if ( customGainsON )
+  if( currentStep <= totalSteps )
   {
-    kp = sequenceGains[currentStep][0];
-    ki = sequenceGains[currentStep][1];
-    kd = sequenceGains[currentStep][2];
-
-    controllerPID.SetTunings( kp, ki, kd );
+    controllerPID.SetMode( MANUAL );
+  
+    timerStep = millis() + (sequence[currentStep][PARAM_RAMPTIME] * 1000);
+    setpoint = sequence[currentStep][PARAM_SETPOINT];
+  
+    output = windowSize;
+  
+    State = STATE_RAMP;
+  
+    if ( customGainsON )
+    {
+      kp = sequenceGains[currentStep][0];
+      ki = sequenceGains[currentStep][1];
+      kd = sequenceGains[currentStep][2];
+  
+      controllerPID.SetTunings( kp, ki, kd );
+    }
+  }
+  else
+  {
+    Status = STATUS_COMPLETE;
   }
 }
 
@@ -591,6 +614,9 @@ void processSerial() {
           break;
         case 14: // set output
           output = strtod(strtok(0, ","), NULL);
+          break;
+        case 15: // set total step
+          totalSteps = strtod(strtok(0, ","), NULL);
           break;
       }
       break;
