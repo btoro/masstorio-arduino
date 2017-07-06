@@ -25,6 +25,7 @@ typedef enum STATE
   STATE_ACTIVE, // ready for Ramp soak program
   STATE_RAMP, // is ramping
   STATE_SOAK, // is soaking
+  STATE_PAUSE,
   STATE_ERROR, // no T read
   STATE_AUTOTUNE, //6
   STATE_HIGHTEMP
@@ -42,23 +43,10 @@ typedef enum SEQUENCE_PARAMS
 {
   PARAM_SETPOINT,
   PARAM_RAMPTIME,
+  PARAM_PAUSETIME,
   PARAM_SOAKTIME
 } Sequence_t;
 
-
-typedef enum SWITCH
-{
-  SWITCH_NONE,
-  SWITCH_1,
-  SWITCH_2
-} switch_t;
-
-typedef enum DEBOUNCE_STATE
-{
-  DEBOUNCE_STATE_IDLE,
-  DEBOUNCE_STATE_CHECK,
-  DEBOUNCE_STATE_RELEASE
-} debounceState_t;
 
 // ***** CONSTANTS *****
 #define SENSOR_SAMPLING_TIME 200
@@ -99,16 +87,6 @@ State_t State;
 // Ramp soak status
 Status_t Status;
 
-
-// Switch debounce state machine state variable
-debounceState_t debounceState;
-// Switch debounce timer
-long lastDebounceTime;
-// Switch press status
-switch_t switchStatus;
-// Seconds timer
-int timerSeconds;
-
 // Specify PID control interface
 PID controllerPID(&input, &output, &setpoint, kp, ki, kd, DIRECT);
 PID_ATune aTune(&input, &output);
@@ -131,7 +109,7 @@ size_t readBufOffset = 0;
 
 //Ramp Soak
 
-double sequence[MAX_SEQUENCE_LENGTH][3];
+double sequence[MAX_SEQUENCE_LENGTH][4];
 double sequenceGains[MAX_SEQUENCE_LENGTH][3];
 
 
@@ -246,29 +224,21 @@ void loop()
     switch (State)
     {
       case STATE_RAMP:
-        // check if cycle is passed
-//        if (millis() > nextCheck)
-//        {
-//          nextCheck = millis() + cycleTime;
-//          if ( (rampStep + 1) <= maxrampSteps )
-//          {
-//            rampStep++;
-//            setpoint = rampStartInput + (rampInterval * rampStep);
-//          }
-//          // Check to see if Soak temperature is reached. If so, then soak.
-//          else if ( ( ( input > sequence[currentStep][PARAM_SETPOINT] ) && direction == 0 ) || ( ( input < sequence[currentStep][PARAM_SETPOINT] ) && direction == 1 )  )
-//          {
-//            initiateSoak();
-//          }
-//        }
-        if (millis() > timerStep) // Soak is complete
+        if (millis() > timerStep) // ramp is complete
         {
           output = 0; // go to next step
+          //controllerPID.SetMode( AUTOMATIC );
+          initatePause();
+          //initiateSoak();
+        }
+        break;
+      case STATE_PAUSE:
+        if (millis() > timerStep) // Pause is complete
+        {
           controllerPID.SetMode( AUTOMATIC );
           initiateSoak();
         }
         break;
-
       case STATE_SOAK:
         // If micro soak temperature is achieved
         if (millis() > timerStep) // Soak is complete
@@ -356,6 +326,12 @@ void initiateRun()
   }
 }
 
+void initatePause()
+{
+    State = STATE_PAUSE;
+    timerStep = millis() + (sequence[currentStep][PARAM_PAUSETIME] * 1000);
+}
+
 void initiateManualRamp()
 {
   if( currentStep <= totalSteps )
@@ -383,45 +359,6 @@ void initiateManualRamp()
     Status = STATUS_COMPLETE;
   }
 }
-
-//void initiateRamp()
-//{
-//  double deltaSetpoint;
-//  rampStartInput = input;
-//
-//  deltaSetpoint =  sequence[currentStep][PARAM_SETPOINT] - rampStartInput;
-//
-//  if ( sequence[currentStep][PARAM_RAMPTIME] == 0 )
-//  {
-//    setpoint = sequence[currentStep][PARAM_SETPOINT];
-//    timerStep = millis();
-//
-//    maxrampSteps = 0;
-//    rampStep = 0;
-//  }
-//  else
-//  {
-//    maxrampSteps = (sequence[currentStep][PARAM_RAMPTIME] * 1000) / cycleTime;
-//
-//    rampInterval =  deltaSetpoint / maxrampSteps;
-//    rampStep = 0;
-//
-//    setpoint = rampStartInput;
-//
-//    timerStep = millis() + (sequence[currentStep][PARAM_RAMPTIME] * 1000);
-//  }
-//
-//  State = STATE_RAMP;
-//
-//  if ( customGainsON )
-//  {
-//    kp = sequenceGains[currentStep][0];
-//    ki = sequenceGains[currentStep][1];
-//    kd = sequenceGains[currentStep][2];
-//
-//    controllerPID.SetTunings( kp, ki, kd, P_ON_E );
-//  }
-//}
 
 void initiateSoak()
 {
