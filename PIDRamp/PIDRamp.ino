@@ -62,7 +62,9 @@ typedef enum SEQUENCE_PARAMS
 
 
 // ***** PIN ASSIGNMENT *****
-int ssrPin = 5;
+int ssrPin = 6;
+int ssrPin2 = 7;
+
 int tempPin = A0;
 int ledRedPin = A1;
 int ledGreenPin = A0;
@@ -135,6 +137,9 @@ void setup()
   // SSR pin initialization to ensure heater is off
   digitalWrite(ssrPin, LOW);
   pinMode(ssrPin, OUTPUT);
+
+  digitalWrite(ssrPin2, LOW);
+  pinMode(ssrPin2, OUTPUT);
 
   // LED pins initialization and turn on upon start-up (active low)
   digitalWrite(ledRedPin, LOW);
@@ -293,14 +298,24 @@ void loop()
       windowStartTime += windowSize;
 
     }
-    if (output > (now - windowStartTime)) digitalWrite(ssrPin, HIGH);
-    else digitalWrite(ssrPin, LOW);
+    if (output > (now - windowStartTime)) 
+    {
+      digitalWrite(ssrPin, HIGH);
+      digitalWrite(ssrPin2, HIGH);
+    }
+    else
+    {
+      digitalWrite(ssrPin, LOW);
+      digitalWrite(ssrPin2, LOW);
+
+    }
 
   }
   // Make sure heaters are off
   else
   {
     digitalWrite(ssrPin, LOW);
+    digitalWrite(ssrPin2, LOW);
   }
 }
 
