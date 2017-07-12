@@ -50,6 +50,7 @@ typedef enum SEQUENCE_PARAMS
 
 // ***** CONSTANTS *****
 #define SENSOR_SAMPLING_TIME 200
+#define CYCLE_TIME 5000
 #define SOAK_TEMPERATURE_STEP 5
 #define MAX_SEQUENCE_LENGTH 50
 #define MAX_TEMP 105
@@ -77,7 +78,7 @@ double output;
 double kp = PID_KP;
 double ki = PID_KI;
 double kd = PID_KD;
-int windowSize = 5000;
+int windowSize = CYCLE_TIME;
 unsigned long windowStartTime;
 unsigned long nextCheck;
 unsigned long nextRead;
@@ -121,15 +122,16 @@ int totalSteps = 0;
 
 
 unsigned long timerStep;
-unsigned long cycleTime = 5000; // 5sec cycle time
+unsigned long timerCycle;
 
 int rampStep;
 int maxrampSteps;
 double rampInterval;
 double rampStartInput;
 bool direction; // 0 RISE, 1 COOl
-
 bool customGainsON = false;
+
+
 
 void setup()
 {
@@ -152,6 +154,7 @@ void setup()
   nextCheck = millis();
   // Initialize thermocouple reading variable
   nextRead = millis();
+  timerCycle = millis();
 
   windowStartTime = millis();
 
@@ -286,7 +289,14 @@ void loop()
         AutoTuneHelper(false);
       }
     }
-    else controllerPID.Compute();
+    else 
+    {
+      if( millis() > timerCycle)
+      {
+            timerCycle += CYCLE_TIME;
+            controllerPID.Compute();
+      }
+    }
 
 
     now = millis();
