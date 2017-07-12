@@ -27,7 +27,7 @@ typedef enum STATE
   STATE_SOAK, // is soaking
   STATE_PAUSE,
   STATE_ERROR, // no T read
-  STATE_AUTOTUNE, //6
+  STATE_AUTOTUNE, //7
   STATE_HIGHTEMP
 } State_t;
 
@@ -60,6 +60,8 @@ typedef enum SEQUENCE_PARAMS
 #define PID_KP 20
 #define PID_KI 0.1
 #define PID_KD 0
+
+#define USE_ONOFF 1
 
 
 // ***** PIN ASSIGNMENT *****
@@ -126,6 +128,9 @@ double rampStartInput;
 bool direction; // 0 RISE, 1 COOl
 bool customGainsON = false;
 
+// On Off Control
+double upperDB = 0.1;
+double lowerDB = 0.3;
 
 
 void setup()
@@ -287,7 +292,12 @@ void loop()
       if( millis() > timerCycle)
       {
             timerCycle += CYCLE_TIME;
-            controllerPID.Compute();
+
+            #if defined( USE_ONOFF )
+              calculateOutput();
+            #else
+              controllerPID.Compute();
+            #endif 
       }
     }
 
@@ -394,8 +404,8 @@ void initiateSoak()
 
 void calculateOutput()
 {
-  if( input > upperDB ) output = 0;
-  else if(input < lowerDB) output = 100;
+  if( input > (setpoint+upperDB) ) output = 0;
+  else if(input < (setpoint-lowerDB) ) output = 100;
 }
 
 void processSerial() {
@@ -578,6 +588,10 @@ void processSerial() {
         case 15: // set total step
           totalSteps = strtod(strtok(0, ","), NULL);
           break;
+        case 16: // set DB
+          upperDB = strtod(strtok(0, ","), NULL);
+          lowerDB = strtod(strtok(0, ","), NULL);
+          break;        
       }
       break;
   }
