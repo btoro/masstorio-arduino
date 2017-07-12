@@ -311,7 +311,7 @@ void loop()
     if (output > (now - windowStartTime)) 
     {
       digitalWrite(ssrPin, HIGH);
-      digitalWrite(ssrPin2, HIGH);
+//      digitalWrite(ssrPin2, HIGH);
     }
     else
     {
