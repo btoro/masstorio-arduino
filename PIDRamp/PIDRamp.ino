@@ -6,8 +6,8 @@
 
 //ADC
 ADC_prescaler_t ADCSpeed = ADC_FAST;
-byte bitsOfResolution = 14; //commanded oversampled resolution
-unsigned long numSamplesToAvg = 3; //number of samples AT THE OVERSAMPLED RESOLUTION that you want to take and average
+byte bitsOfResolution = 12; //commanded oversampled resolution
+unsigned long numSamplesToAvg = 5; //number of samples AT THE OVERSAMPLED RESOLUTION that you want to take and average
 
 // AUTO Tune
 byte ATuneModeRemember = 1;
@@ -80,10 +80,9 @@ double ki = PID_KI;
 double kd = PID_KD;
 int windowSize = CYCLE_TIME;
 unsigned long windowStartTime;
-unsigned long nextCheck;
 unsigned long nextRead;
+unsigned long timerCycle;
 
-unsigned long buzzerPeriod;
 
 // Controller State
 State_t State;
@@ -114,15 +113,11 @@ size_t readBufOffset = 0;
 
 double sequence[MAX_SEQUENCE_LENGTH][4];
 double sequenceGains[MAX_SEQUENCE_LENGTH][3];
-
-
 int startStep = 0;
 int currentStep;
 int totalSteps = 0;
 
-
 unsigned long timerStep;
-unsigned long timerCycle;
 
 int rampStep;
 int maxrampSteps;
@@ -150,8 +145,6 @@ void setup()
   // Serial communication at 57600 bps
   Serial.begin(57600);
 
-  // Initialize time keeping variable
-  nextCheck = millis();
   // Initialize thermocouple reading variable
   nextRead = millis();
   timerCycle = millis();
@@ -159,7 +152,7 @@ void setup()
   windowStartTime = millis();
 
   controllerPID.SetOutputLimits(0, windowSize);
-  controllerPID.SetSampleTime( SENSOR_SAMPLING_TIME );
+  controllerPID.SetSampleTime( CYCLE_TIME );
   controllerPID.SetMode(AUTOMATIC);
 
   controllerPID.SetTunings( kp, ki, kd, P_ON_E );
@@ -399,6 +392,11 @@ void initiateSoak()
 //  }
 }
 
+void calculateOutput()
+{
+  if( input > upperDB ) output = 0;
+  else if(input < lowerDB) output = 100;
+}
 
 void processSerial() {
   //int receivedValue = atoi(readBuf);
