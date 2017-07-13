@@ -50,18 +50,19 @@ typedef enum SEQUENCE_PARAMS
 
 // ***** CONSTANTS *****
 #define SENSOR_SAMPLING_TIME 200
-#define CYCLE_TIME 5000
+#define CYCLE_TIME 1000
 #define SOAK_TEMPERATURE_STEP 5
 #define MAX_SEQUENCE_LENGTH 50
 #define MAX_TEMP 105
 #define MIN_TEMP -200
+#define RATE_SAMPLE_POINTS 10
 // ***** PID PARAMETERS *****
 // ***** PRE-HEAT STAGE *****
 #define PID_KP 20
 #define PID_KI 0.1
 #define PID_KD 0
 
-#define USE_ONOFF 1
+//#define USE_ONOFF 1
 
 
 // ***** PIN ASSIGNMENT *****
@@ -85,6 +86,10 @@ unsigned long windowStartTime;
 unsigned long nextRead;
 unsigned long timerCycle;
 
+//derivative
+double lastInput;
+double rate;
+int counter = 0;
 
 // Controller State
 State_t State;
@@ -92,7 +97,7 @@ State_t State;
 Status_t Status;
 
 // Specify PID control interface
-PID controllerPID(&input, &output, &setpoint, kp, ki, kd, DIRECT);
+PID controllerPID(&input, &output, &setpoint, kp, ki, kd, DIRECT, P_ON_M);
 PID_ATune aTune(&input, &output);
 
 
@@ -201,7 +206,17 @@ void loop()
     // Read thermocouple next sampling period
     nextRead += SENSOR_SAMPLING_TIME;
     // Read current temperature
-    input = read_temps();
+    counter = counter++;
+
+    if( counter % RATE_SAMPLE_POINTS == 0 )
+    {
+      lastInput = input;
+      input = read_temps();
+      rate = (input-lastInput)/((SENSOR_SAMPLING_TIME*RATE_SAMPLE_POINTS)/1000); // c/s
+      counter = 0;
+    }
+    else input = read_temps();
+
 
     // If thermocouple problem detected
     if (isnan(input))
@@ -305,7 +320,7 @@ void loop()
     now = millis();
 
 
-    if ((now - windowStartTime) > windowSize)
+    if ((now - windowStartTime) >= windowSize)
     {
       // Time to shift the Relay Window
       windowStartTime += windowSize;
@@ -404,8 +419,8 @@ void initiateSoak()
 
 void calculateOutput()
 {
-  if( input > (setpoint+upperDB) ) output = 0;
-  else if(input < (setpoint-lowerDB) ) output = 100;
+  if( input > (setpoint-upperDB) ) output = 0;
+  else if(input < (setpoint-lowerDB) ) output = windowSize;
 }
 
 void processSerial() {
@@ -433,7 +448,7 @@ void processSerial() {
           break;
         case 2: //PID Output
           Serial.print("3,2,");
-          Serial.print(output);
+          Serial.print((output/windowSize)*100);
           Serial.print('\n');
           break;
         case 3:  // State INACTIVE, ...
@@ -505,6 +520,11 @@ void processSerial() {
         case 12: //get current steps
           Serial.print("3,12,");
           Serial.print(currentStep);
+          Serial.print('\n');
+          break;
+        case 13: //get rate
+          Serial.print("3,13,");
+          Serial.print(rate);
           Serial.print('\n');
           break;
       }
