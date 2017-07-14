@@ -42,7 +42,8 @@ typedef enum STATUS
 typedef enum SEQUENCE_PARAMS
 {
   PARAM_SETPOINT,
-  PARAM_RAMPTIME,
+  PARAM_RC1,
+  PARAM_RC2,
   PARAM_PAUSETIME,
   PARAM_SOAKTIME
 } Sequence_t;
@@ -118,7 +119,7 @@ size_t readBufOffset = 0;
 
 //Ramp Soak
 
-double sequence[MAX_SEQUENCE_LENGTH][4];
+double sequence[MAX_SEQUENCE_LENGTH][5];
 double sequenceGains[MAX_SEQUENCE_LENGTH][3];
 int startStep = 0;
 int currentStep;
@@ -132,6 +133,9 @@ double rampInterval;
 double rampStartInput;
 bool direction; // 0 RISE, 1 COOl
 bool customGainsON = false;
+
+double error;
+
 
 // On Off Control
 double upperDB = 0.1;
@@ -208,11 +212,11 @@ void loop()
     // Read current temperature
     counter = counter++;
 
-    if( counter % RATE_SAMPLE_POINTS == 0 )
+    if ( counter % RATE_SAMPLE_POINTS == 0 )
     {
       lastInput = input;
       input = read_temps();
-      rate = (input-lastInput)/((SENSOR_SAMPLING_TIME*RATE_SAMPLE_POINTS)/1000); // c/s
+      rate = (input - lastInput) / ((SENSOR_SAMPLING_TIME * RATE_SAMPLE_POINTS) / 1000); // c/s
       counter = 0;
     }
     else input = read_temps();
@@ -227,12 +231,12 @@ void loop()
       //Serial.println("Error No read");
     }
 
-    if( input > MAX_TEMP )
+    if ( input > MAX_TEMP )
     {
       State = STATE_HIGHTEMP;
       Status = STATUS_OFF;
     }
-    if( input < MIN_TEMP )
+    if ( input < MIN_TEMP )
     {
       State = STATE_HIGHTEMP;
       Status = STATUS_OFF;
@@ -245,12 +249,23 @@ void loop()
     switch (State)
     {
       case STATE_RAMP:
-        if (millis() > timerStep) // ramp is complete
+        //if (millis() > timerStep) // ramp is complete
+        //{
+        //output = 0; // go to next step
+        //controllerPID.SetMode( AUTOMATIC );
+        //initatePause();
+        //initiateSoak();
+        //}
+        error =  setpoint - input;
+
+        if ( error < sequence[currentStep][PARAM_RC2] )
         {
-          output = 0; // go to next step
-          //controllerPID.SetMode( AUTOMATIC );
-          initatePause();
-          //initiateSoak();
+          output = 0;
+          initatePause( 15 );
+        }
+        else if ( error < sequence[currentStep][PARAM_RC1])
+        {
+          output = windowSize / 2;
         }
         break;
       case STATE_PAUSE:
@@ -265,7 +280,7 @@ void loop()
         if (millis() > timerStep) // Soak is complete
         {
           currentStep++; // go to next step
-          initiateManualRamp();
+          initiateAutoRamp();
         }
         break;
       case STATE_ERROR:
@@ -302,17 +317,17 @@ void loop()
         AutoTuneHelper(false);
       }
     }
-    else 
+    else
     {
-      if( millis() > timerCycle)
+      if ( millis() > timerCycle)
       {
-            timerCycle += CYCLE_TIME;
+        timerCycle += CYCLE_TIME;
 
-            #if defined( USE_ONOFF )
-              calculateOutput();
-            #else
-              controllerPID.Compute();
-            #endif 
+#if defined( USE_ONOFF )
+        calculateOutput();
+#else
+        controllerPID.Compute();
+#endif
       }
     }
 
@@ -326,10 +341,10 @@ void loop()
       windowStartTime += windowSize;
 
     }
-    if (output > (now - windowStartTime)) 
+    if (output > (now - windowStartTime))
     {
       digitalWrite(ssrPin, HIGH);
-//      digitalWrite(ssrPin2, HIGH);
+      //      digitalWrite(ssrPin2, HIGH);
     }
     else
     {
@@ -362,38 +377,73 @@ void initiateRun()
       case STATE_ACTIVE:  // We begin a new RAMP SOAK Cycle
         Status = STATUS_ON;
         currentStep = startStep;
-        initiateManualRamp();
+        initiateAutoRamp();
 
         break;
     }
   }
 }
 
-void initatePause()
+void initatePause( double t )
 {
-    State = STATE_PAUSE;
+  if ( t )
+  {
+    timerStep = millis() + (t * 1000);
+  }
+  else
+  {
     timerStep = millis() + (sequence[currentStep][PARAM_PAUSETIME] * 1000);
+  }
+  State = STATE_PAUSE;
 }
+//
+//void initiateManualRamp()
+//{
+//  if ( currentStep <= totalSteps )
+//  {
+//    controllerPID.SetMode( MANUAL );
+//
+//    timerStep = millis() + (sequence[currentStep][PARAM_RAMPTIME] * 1000);
+//    setpoint = sequence[currentStep][PARAM_SETPOINT];
+//
+//    output = windowSize;
+//
+//    State = STATE_RAMP;
+//
+//    if ( customGainsON )
+//    {
+//      kp = sequenceGains[currentStep][0];
+//      ki = sequenceGains[currentStep][1];
+//      kd = sequenceGains[currentStep][2];
+//
+//      controllerPID.SetTunings( kp, ki, kd );
+//    }
+//  }
+//  else
+//  {
+//    Status = STATUS_COMPLETE;
+//  }
+//}
 
-void initiateManualRamp()
+void initiateAutoRamp()
 {
-  if( currentStep <= totalSteps )
+  if ( currentStep <= totalSteps )
   {
     controllerPID.SetMode( MANUAL );
-  
-    timerStep = millis() + (sequence[currentStep][PARAM_RAMPTIME] * 1000);
+
+    //timerStep = millis() + (sequence[currentStep][PARAM_RAMPTIME] * 1000);
     setpoint = sequence[currentStep][PARAM_SETPOINT];
-  
+
     output = windowSize;
-  
+
     State = STATE_RAMP;
-  
+
     if ( customGainsON )
     {
       kp = sequenceGains[currentStep][0];
       ki = sequenceGains[currentStep][1];
       kd = sequenceGains[currentStep][2];
-  
+
       controllerPID.SetTunings( kp, ki, kd );
     }
   }
@@ -405,22 +455,22 @@ void initiateManualRamp()
 
 void initiateSoak()
 {
-//  if ( sequence[currentStep][PARAM_SOAKTIME] == 0 )
-//  {
-//    State = STATE_ISO;
-//    timerStep = millis();
-//  }
-//  else
-//  {
-    State = STATE_SOAK;
-    timerStep = millis() + (sequence[currentStep][PARAM_SOAKTIME] * 1000);
-//  }
+  //  if ( sequence[currentStep][PARAM_SOAKTIME] == 0 )
+  //  {
+  //    State = STATE_ISO;
+  //    timerStep = millis();
+  //  }
+  //  else
+  //  {
+  State = STATE_SOAK;
+  timerStep = millis() + (sequence[currentStep][PARAM_SOAKTIME] * 1000);
+  //  }
 }
 
 void calculateOutput()
 {
-  if( input > (setpoint-upperDB) ) output = 0;
-  else if(input < (setpoint-lowerDB) ) output = windowSize;
+  if ( input > (setpoint - upperDB) ) output = 0;
+  else if (input < (setpoint - lowerDB) ) output = windowSize;
 }
 
 void processSerial() {
@@ -448,7 +498,7 @@ void processSerial() {
           break;
         case 2: //PID Output
           Serial.print("3,2,");
-          Serial.print((output/windowSize)*100);
+          Serial.print((output / windowSize) * 100);
           Serial.print('\n');
           break;
         case 3:  // State INACTIVE, ...
@@ -611,7 +661,7 @@ void processSerial() {
         case 16: // set DB
           upperDB = strtod(strtok(0, ","), NULL);
           lowerDB = strtod(strtok(0, ","), NULL);
-          break;        
+          break;
       }
       break;
   }
