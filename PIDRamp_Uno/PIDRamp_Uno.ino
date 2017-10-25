@@ -1,7 +1,6 @@
 
 // ***** INCLUDES *****
 #include <PID_v1.h>
-#include <PID_AutoTune_v0.h>
 #include <eRCaGuy_NewAnalogRead.h>
 
 //ADC
@@ -9,13 +8,22 @@ ADC_prescaler_t ADCSpeed = ADC_FAST;
 byte bitsOfResolution = 12; //commanded oversampled resolution
 unsigned long numSamplesToAvg = 5; //number of samples AT THE OVERSAMPLED RESOLUTION that you want to take and average
 
+//#define AUTOTUNE
+
 // AUTO Tune
+#if defined( AUTOTUNE )
+#include <PID_AutoTune_v0.h>
 
 byte ATuneModeRemember = 1;
 
 double aTuneStep = 50, aTuneNoise = 1, aTuneStartValue = 100;
 unsigned int aTuneLookBack = 20;
 
+// Specify PID control interface
+PID_ATune aTune(&input, &output);
+
+
+#endif
 boolean tuning = false;
 
 // ***** TYPE DEFINITIONS *****
@@ -64,16 +72,13 @@ typedef enum SEQUENCE_PARAMS
 #define PID_KI 0.1
 #define PID_KD 0
 
-//#define USE_ONOFF 1
-
-
 // ***** PIN ASSIGNMENT *****
-int ssrPin = 6;
-int ssrPin2 = 7;
-int chillerPin = 13;
-int tempPin = A1;
-int ledRedPin = A1;
-int ledGreenPin = A0;
+const int ssrPin = 6;
+const int ssrPin2 = 7;
+const int chillerPin = 13;
+const int tempPin = A1;
+const int ledRedPin = A1;
+const int ledGreenPin = A0;
 
 
 // ***** PID CONTROL VARIABLES *****
@@ -98,9 +103,7 @@ State_t State;
 // Ramp soak status
 Status_t Status;
 
-// Specify PID control interface
 PID controllerPID(&input, &output, &setpoint, kp, ki, kd, DIRECT, P_ON_M);
-PID_ATune aTune(&input, &output);
 
 
 // Temperature Reading Constants
@@ -250,33 +253,34 @@ void loop()
 
   if (Status == STATUS_ON)
   {
-    // Reflow oven controller state machine
     switch (State)
     {
       case STATE_RAMP:
-        //if (millis() > timerStep) // ramp is complete
-        //{
-        //output = 0; // go to next step
-        //controllerPID.SetMode( AUTOMATIC );
-        //initatePause();
-        //initiateSoak();
-        //}
         error =  setpoint - input;
 
-        if ( error < sequence[currentStep][PARAM_RC2] )
+        if ( abs(error) < sequence[currentStep][PARAM_RC2] )
         {
           output = 0;
           initatePause( sequence[currentStep][PARAM_PAUSETIME] );
         }
-        else if ( error < sequence[currentStep][PARAM_RC1])
+        else if ( abs(error) < sequence[currentStep][PARAM_RC1])
         {
-          output = windowSize / 2;
+          if( direction )
+          {
+            output = windowSize / 2;
+          }
+          else // Cooling; No 50% 
+          {
+            output = 0;
+          }
+
         }
         break;
       case STATE_PAUSE:
         if (millis() > timerStep) // Pause is complete
         {
           controllerPID.SetMode( AUTOMATIC );
+          direction = true;
           initiateSoak();
         }
         break;
@@ -315,6 +319,8 @@ void loop()
 
     if (tuning)
     {
+      #if defined( AUTOTUNE )
+
       byte val = (aTune.Runtime());
       if (val != 0)
       {
@@ -329,6 +335,7 @@ void loop()
         controllerPID.SetTunings(kp, ki, kd , P_ON_E );
         AutoTuneHelper(false);
       }
+      #endif
     }
     else
     {
@@ -336,11 +343,7 @@ void loop()
       {
         timerCycle += CYCLE_TIME;
 
-#if defined( USE_ONOFF )
-        calculateOutput();
-#else
         controllerPID.Compute();
-#endif
       }
     }
 
@@ -356,11 +359,22 @@ void loop()
     }
     if (output > (now - windowStartTime))
     {
-      digitalWrite(ssrPin, HIGH);
-      //      digitalWrite(ssrPin2, HIGH);
+      if( direction ) // HEATING
+      {
+        digitalWrite(ssrPin, HIGH);
+        //      digitalWrite(ssrPin2, HIGH);
+      }
+      else // COOLING
+      {
+        digitalWrite(chillerPin, HIGH);
+      }
     }
     else
     {
+      if( ~direction ) // HEATING
+      {
+        digitalWrite(chillerPin, LOW);
+      }
       digitalWrite(ssrPin, LOW);
       digitalWrite(ssrPin2, LOW);
 
@@ -409,34 +423,7 @@ void initatePause( double t )
   }
   State = STATE_PAUSE;
 }
-//
-//void initiateManualRamp()
-//{
-//  if ( currentStep <= totalSteps )
-//  {
-//    controllerPID.SetMode( MANUAL );
-//
-//    timerStep = millis() + (sequence[currentStep][PARAM_RAMPTIME] * 1000);
-//    setpoint = sequence[currentStep][PARAM_SETPOINT];
-//
-//    output = windowSize;
-//
-//    State = STATE_RAMP;
-//
-//    if ( customGainsON )
-//    {
-//      kp = sequenceGains[currentStep][0];
-//      ki = sequenceGains[currentStep][1];
-//      kd = sequenceGains[currentStep][2];
-//
-//      controllerPID.SetTunings( kp, ki, kd );
-//    }
-//  }
-//  else
-//  {
-//    Status = STATUS_COMPLETE;
-//  }
-//}
+
 
 void initiateAutoRamp()
 {
@@ -446,6 +433,28 @@ void initiateAutoRamp()
     timerStep = millis(); 
     //timerStep = millis() + (sequence[currentStep][PARAM_RAMPTIME] * 1000);
     setpoint = sequence[currentStep][PARAM_SETPOINT];
+
+
+    if( currentStep == 1 )
+    {
+      if( (setpoint- input) > 0 )
+      {
+        direction = true;
+      }
+      else
+      {
+        direction = false;
+      }
+    }
+    else if( (setpoint- sequence[currentStep-1][PARAM_SETPOINT]) > 0 )
+    {
+      direction = true;
+    }
+    else
+    {
+      direction = false;
+    }
+      
 
     output = windowSize;
 
@@ -480,11 +489,6 @@ void initiateSoak()
   //  }
 }
 
-void calculateOutput()
-{
-  if ( input > (setpoint - upperDB) ) output = 0;
-  else if (input < (setpoint - lowerDB) ) output = windowSize;
-}
 
 void processSerial() {
   //int receivedValue = atoi(readBuf);
@@ -624,8 +628,10 @@ void processSerial() {
           customGainsON = atoi(command);
           break;
         case 8: //autotune
+          #if defined( AUTOTUNE )
           command = strtok(0, ",");
           switchAutoTune( atoi(command) );
+          #endif
           break;
         case 9: //setpoint
           setpoint =  strtod(strtok(0, ","), NULL);
@@ -703,6 +709,8 @@ double read_temps(void)
   return t_read;
 }
 
+#if defined( AUTOTUNE )
+
 void switchAutoTune( int mode )
 {
   if ( mode == 1 && !tuning)
@@ -734,3 +742,5 @@ void AutoTuneHelper(boolean start)
   else
     controllerPID.SetMode(ATuneModeRemember);
 }
+
+#endif
