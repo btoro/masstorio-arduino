@@ -3,28 +3,11 @@
 #include <PID_v1.h>
 #include <eRCaGuy_NewAnalogRead.h>
 
-//ADC
+//ADC Oversampling -- Ideally, this needs to be replaced with a better hardware ADC...
 ADC_prescaler_t ADCSpeed = ADC_FAST;
 byte bitsOfResolution = 12; //commanded oversampled resolution
 unsigned long numSamplesToAvg = 5; //number of samples AT THE OVERSAMPLED RESOLUTION that you want to take and average
 
-//#define AUTOTUNE
-
-// AUTO Tune
-#if defined( AUTOTUNE )
-#include <PID_AutoTune_v0.h>
-
-byte ATuneModeRemember = 1;
-
-double aTuneStep = 50, aTuneNoise = 1, aTuneStartValue = 100;
-unsigned int aTuneLookBack = 20;
-
-// Specify PID control interface
-PID_ATune aTune(&input, &output);
-
-
-#endif
-boolean tuning = false;
 
 // ***** TYPE DEFINITIONS *****
 typedef enum STATE
@@ -112,6 +95,8 @@ Status_t Status;
 Mode_t Mode = MODE_RAMPSOAK;
 
 
+
+
 PID controllerPID(&input, &output, &setpoint, kp, ki, kd, DIRECT, P_ON_M);
 
 
@@ -135,20 +120,36 @@ size_t readBufOffset = 0;
 
 double sequence[MAX_SEQUENCE_LENGTH][5];
 double sequenceGains[MAX_SEQUENCE_LENGTH][3];
+
+
+// int rampStep;
+// int maxrampSteps;
+// double rampInterval;
+// double rampStartInput;
+bool ramp_direction; // 0 RISE, 1 COOl
+bool customGainsON = false;
+
+double error;
+
+// Constant Rate Mode
+
+double rateMain = 0;
+double startTemp = 0;
+double endTemp = 0;
+double rateTime;
+
+// Used to calculate current setpoint for ramp; Generated at the start of each constant ramp program
+double rateConst = 0;
+double rampY = 0;
+
+int samplesPerMin = 6;
+
+// Shared by all modes
 int startStep = 0;
 int currentStep;
 int totalSteps = 0;
 
 unsigned long timerStep;
-
-int rampStep;
-int maxrampSteps;
-double rampInterval;
-double rampStartInput;
-bool ramp_direction; // 0 RISE, 1 COOl
-bool customGainsON = false;
-
-double error;
 
 
 // On Off Control
@@ -379,8 +380,13 @@ void loop()
       case MODE_RATE:
         if( State == STATE_RAMP )
         {
-
-          
+			if (millis() > timerStep) // Step is comlete
+			{
+				currentStep = currentStep + 1;
+				setpoint = calculateNextSetPoint();
+				controllerPID.SetMode( AUTOMATIC );
+				timerStep = millis() +(rateTime * 1000);
+			}
         }
       break;
     }
@@ -432,7 +438,7 @@ void loop()
   }
 }
 
-void initiateRun()
+void initiateRampSoakRun()
 {
   if ( Status == STATUS_INITIATE )
   {
@@ -456,14 +462,8 @@ void initiateRun()
 
 void initatePause( double t )
 {
-//  if ( t )
-//  {
-   timerStep = millis() + (t * 1000);
-//  }
-//  else
-//  {
-//    timerStep = millis() + (sequence[currentStep][PARAM_PAUSETIME] * 1000);
-//  }
+
+  timerStep = millis() + (t * 1000);
   State = STATE_PAUSE;
 }
 
@@ -537,17 +537,39 @@ void initiateAutoRamp()
 
 void initiateSoak()
 {
-  //  if ( sequence[currentStep][PARAM_SOAKTIME] == 0 )
-  //  {
-  //    State = STATE_ISO;
-  //    timerStep = millis();
-  //  }
-  //  else
-  //  {
   State = STATE_SOAK;
   timerStep = millis() + (sequence[currentStep][PARAM_SOAKTIME] * 1000);
-  //  }
 }
+
+
+void initateConstantRate()
+{
+	// Rate is C per min; 
+	// For each min we want to split it into X segments defined by samplesPerMin;
+	
+	rateTime = 60/samplesPerMin;
+	rateConst = rateMain/samplesPerMin;
+	
+	double range = endTemp-startTemp;
+
+	currentStep = startStep;
+	setpoint = calculateNextSetPoint();
+	controllerPID.SetMode( AUTOMATIC );
+	timerStep = millis() + (rateTime * 1000);
+	ramp_direction = true;
+	
+	Status = STATUS_ON;
+	State = STATE_RAMP;
+
+	
+}
+
+double calculateNextSetPoint()
+{
+	double temperature = (rateConst*currentStep) + startTemp;
+	return temperature;
+}
+
 
 
 void processSerial() {
@@ -681,10 +703,14 @@ void processSerial() {
           action = atoi( strtok(0, ",") );
 
           Status =  action;
-          if ( Status == STATUS_INITIATE )
+          if (( Status == STATUS_INITIATE ) & (Mode == MODE_RAMPSOAK) )
           {
-            initiateRun();
+            initiateRampSoakRun();
           }
+          else if (( Status == STATUS_INITIATE ) & (Mode == MODE_RATE) )
+		  {
+			initateConstantRate(); 
+		  }
           else if ( Status == STATUS_OFF) output = 0;
           break;
         case 6: // startStep
@@ -757,11 +783,19 @@ void processSerial() {
         case 18: // calibration factor
           calibrationFactor = strtod(strtok(0, ","), NULL);
           break;
+        case 19: // Rate Settings
+          rateMain = strtod(strtok(0, ","), NULL);
+          startTemp = strtod(strtok(0, ","), NULL);
+          endTemp = strtod(strtok(0, ","), NULL);
+          samplesPerMin = atoi(strtok(0, ","));
+          break;		  
+		  
       }
       break;
   }
 }
 
+// Function that reads temperature from thermosister
 double read_temps(void)
 {
   // int input = analogRead(tempPin);
@@ -777,39 +811,3 @@ double read_temps(void)
   t_read = t_read - 273.15 + calibrationFactor;
   return t_read;
 }
-
-#if defined( AUTOTUNE )
-
-void switchAutoTune( int mode )
-{
-  if ( mode == 1 && !tuning)
-  {
-    Status = STATUS_ON;
-    State = STATE_AUTOTUNE;
-    //Set the output to the desired starting frequency.
-    output = aTuneStartValue;
-    aTune.SetNoiseBand(aTuneNoise);
-    aTune.SetOutputStep(aTuneStep);
-    aTune.SetLookbackSec((int)aTuneLookBack);
-    AutoTuneHelper(true);
-    tuning = true;
-  }
-  else if ( mode == 0 )
-  { //cancel autotune
-    Status = STATUS_OFF;
-    State = STATE_AUTOTUNE;
-    aTune.Cancel();
-    tuning = false;
-    AutoTuneHelper(false);
-  }
-}
-
-void AutoTuneHelper(boolean start)
-{
-  if (start)
-    ATuneModeRemember = controllerPID.GetMode();
-  else
-    controllerPID.SetMode(ATuneModeRemember);
-}
-
-#endif
