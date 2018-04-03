@@ -48,6 +48,14 @@ typedef enum STATUS
   STATUS_COMPLETE // cycle is completed
 } Status_t;
 
+typedef enum MODE
+{
+  MODE_ISOTHERMAL, // isothermal operating mode
+  MODE_RAMPSOAK, // ramp soak 
+  MODE_RATE, // constant rate mode
+} Mode_t;
+
+
 typedef enum SEQUENCE_PARAMS
 {
   PARAM_SETPOINT,
@@ -61,7 +69,6 @@ typedef enum SEQUENCE_PARAMS
 // ***** CONSTANTS *****
 #define SENSOR_SAMPLING_TIME 200
 #define CYCLE_TIME 1000
-#define SOAK_TEMPERATURE_STEP 5
 #define MAX_SEQUENCE_LENGTH 20  
 #define MAX_TEMP 105
 #define MIN_TEMP -200
@@ -102,6 +109,8 @@ int counter = 0;
 State_t State;
 // Ramp soak status
 Status_t Status;
+Mode_t Mode = MODE_RAMPSOAK;
+
 
 PID controllerPID(&input, &output, &setpoint, kp, ki, kd, DIRECT, P_ON_M);
 
@@ -136,7 +145,7 @@ int rampStep;
 int maxrampSteps;
 double rampInterval;
 double rampStartInput;
-bool direction; // 0 RISE, 1 COOl
+bool ramp_direction; // 0 RISE, 1 COOl
 bool customGainsON = false;
 
 double error;
@@ -253,101 +262,135 @@ void loop()
 
   if (Status == STATUS_ON)
   {
-    switch (State)
+    switch(Mode)
     {
-      case STATE_RAMP:
-        error =  setpoint - input;
+      case MODE_RAMPSOAK:
+      
+        switch(State)
+        {
+          case STATE_RAMP:
+            error =  setpoint - input;
+    
+            if ( abs(error) < sequence[currentStep][PARAM_RC2] )
+            {
+                output = 0;
+    //
+    //          if( sequence[currentStep][PARAM_PAUSETIME] > 0 )
+    //          {
+                initatePause( sequence[currentStep][PARAM_PAUSETIME] );
+    //          }
+    //          else
+    //          {
+    //            if( ramp_direction ) // Going UP
+    //            {
+    //              controllerPID.SetMode( AUTOMATIC );
+    //              ramp_direction = true;
+    //              initiateSoak();
+    //            }
+    //            else // If we are cooling, then extend pause until we are at or below SP
+    //            {
+    //              error = input - setpoint;
+    //              if( error <= 0.5 )
+    //              {
+    //                controllerPID.SetMode( AUTOMATIC );
+    //                ramp_direction = true;
+    //                initiateSoak();
+    //              }            
+    //            }
+    //          }
+    
+                
+    
+    //          if( ~ramp_direction ) // if we were cooling and reached the difference
+    //          {
+    //            digitalWrite(chillerPin, LOW);
+    //          }
+              
+            }
+            else if ( abs(error) < sequence[currentStep][PARAM_RC1])
+            {
+              if( ramp_direction )
+              {
+                output = windowSize / 2;
+              }
+              else // Cooling; No 50% 
+              {
+                output = 0;
+                digitalWrite(chillerPin, LOW);
+                initatePause( sequence[currentStep][PARAM_PAUSETIME] );
+    
+              }
+    
+            }
+            break;
+          case STATE_PAUSE:
+            if (millis() > timerStep) // Pause is complete
+            {
+              if( ramp_direction ) // Going UP
+              {
+                controllerPID.SetMode( AUTOMATIC );
+                ramp_direction = true;
+                initiateSoak();
+              }
+              else // If we are cooling, then extend pause until we are at or below SP
+              {
+                error = input - setpoint;
+                if( error <= 0.5 )
+                {
+                  controllerPID.SetMode( AUTOMATIC );
+                  ramp_direction = true;
+                  initiateSoak();
+                }            
+              }
+            }
+            break;
+          case STATE_SOAK:
+            // If micro soak temperature is achieved
+            //controllerPID.SetMode( AUTOMATIC );
+            if (millis() > timerStep) // Soak is complete
+            {
+              if ( (currentStep+1) <= totalSteps )
+              {
+                currentStep++; // go to next step
+                initiateAutoRamp();
+              }
+              else
+              {
+                Status = STATUS_COMPLETE;
+                State = STATE_INACTIVE;
+              }
+            }
+            break;
+          case STATE_ERROR:
+            // If thermocouple problem is still present
+            if (isnan(input))
+            {
+              // Wait until thermocouple wire is connected
+              State = STATE_ERROR;
+            }
+            else
+            {
+              // Clear to perform reflow process
+              State = STATE_INACTIVE;
+            }
+            break;
+        }
+      break;
+      case MODE_RATE:
+        if( State == STATE_RAMP )
+        {
 
-        if ( abs(error) < sequence[currentStep][PARAM_RC2] )
-        {
-          output = 0;
-          initatePause( sequence[currentStep][PARAM_PAUSETIME] );
+          
         }
-        else if ( abs(error) < sequence[currentStep][PARAM_RC1])
-        {
-          if( direction )
-          {
-            output = windowSize / 2;
-          }
-          else // Cooling; No 50% 
-          {
-            output = 0;
-          }
-
-        }
-        break;
-      case STATE_PAUSE:
-        if (millis() > timerStep) // Pause is complete
-        {
-          controllerPID.SetMode( AUTOMATIC );
-          direction = true;
-          initiateSoak();
-        }
-        break;
-      case STATE_SOAK:
-        // If micro soak temperature is achieved
-        if (millis() > timerStep) // Soak is complete
-        {
-          if ( (currentStep+1) <= totalSteps )
-          {
-            currentStep++; // go to next step
-            initiateAutoRamp();
-          }
-          else
-          {
-            Status = STATUS_COMPLETE;
-            State = STATE_INACTIVE;
-          }
-        }
-        break;
-      case STATE_ERROR:
-        // If thermocouple problem is still present
-        if (isnan(input))
-        {
-          // Wait until thermocouple wire is connected
-          State = STATE_ERROR;
-        }
-        else
-        {
-          // Clear to perform reflow process
-          State = STATE_INACTIVE;
-        }
-        break;
+      break;
     }
-
-    // PID computation and SSR control
-
-    if (tuning)
-    {
-      #if defined( AUTOTUNE )
-
-      byte val = (aTune.Runtime());
-      if (val != 0)
-      {
-        tuning = false;
-        State = STATE_INACTIVE;
-      }
-      if (!tuning)
-      { //we're done, set the tuning parameters
-        kp = aTune.GetKp();
-        ki = aTune.GetKi();
-        kd = aTune.GetKd();
-        controllerPID.SetTunings(kp, ki, kd , P_ON_E );
-        AutoTuneHelper(false);
-      }
-      #endif
-    }
-    else
-    {
+    //SSR control
       if ( millis() > timerCycle)
       {
         timerCycle += CYCLE_TIME;
 
         controllerPID.Compute();
       }
-    }
-
-
     now = millis();
 
 
@@ -359,7 +402,7 @@ void loop()
     }
     if (output > (now - windowStartTime))
     {
-      if( direction ) // HEATING
+      if( ramp_direction ) // HEATING
       {
         digitalWrite(ssrPin, HIGH);
         //      digitalWrite(ssrPin2, HIGH);
@@ -371,10 +414,10 @@ void loop()
     }
     else
     {
-      if( ~direction ) // HEATING
-      {
-        digitalWrite(chillerPin, LOW);
-      }
+//      if( ~direction ) // HEATING
+//      {
+//        digitalWrite(chillerPin, LOW);
+//      }
       digitalWrite(ssrPin, LOW);
       digitalWrite(ssrPin2, LOW);
 
@@ -413,14 +456,14 @@ void initiateRun()
 
 void initatePause( double t )
 {
-  if ( t )
-  {
-    timerStep = millis() + (t * 1000);
-  }
-  else
-  {
-    timerStep = millis() + (sequence[currentStep][PARAM_PAUSETIME] * 1000);
-  }
+//  if ( t )
+//  {
+   timerStep = millis() + (t * 1000);
+//  }
+//  else
+//  {
+//    timerStep = millis() + (sequence[currentStep][PARAM_PAUSETIME] * 1000);
+//  }
   State = STATE_PAUSE;
 }
 
@@ -429,44 +472,61 @@ void initiateAutoRamp()
 {
   if ( currentStep <= totalSteps )
   {
-    controllerPID.SetMode( MANUAL );
-    timerStep = millis(); 
-    //timerStep = millis() + (sequence[currentStep][PARAM_RAMPTIME] * 1000);
     setpoint = sequence[currentStep][PARAM_SETPOINT];
 
-
-    if( currentStep == 1 )
+    if( abs(setpoint-sequence[currentStep-1][PARAM_SETPOINT]) < 0.1 )
     {
-      if( (setpoint- input) > 0 )
+      State = STATE_SOAK;
+      timerStep = millis() + (sequence[currentStep][PARAM_SOAKTIME] * 1000);
+      if ( customGainsON )
       {
-        direction = true;
-      }
-      else
-      {
-        direction = false;
-      }
-    }
-    else if( (setpoint- sequence[currentStep-1][PARAM_SETPOINT]) > 0 )
-    {
-      direction = true;
+        kp = sequenceGains[currentStep][0];
+        ki = sequenceGains[currentStep][1];
+        kd = sequenceGains[currentStep][2];
+  
+        controllerPID.SetTunings( kp, ki, kd );
+      } 
     }
     else
     {
-      direction = false;
-    }
-      
-
-    output = windowSize;
-
-    State = STATE_RAMP;
-
-    if ( customGainsON )
-    {
-      kp = sequenceGains[currentStep][0];
-      ki = sequenceGains[currentStep][1];
-      kd = sequenceGains[currentStep][2];
-
-      controllerPID.SetTunings( kp, ki, kd );
+      controllerPID.SetMode( MANUAL );
+      timerStep = millis(); 
+      //timerStep = millis() + (sequence[currentStep][PARAM_RAMPTIME] * 1000);
+  
+  
+      if( currentStep == 1 )
+      {
+        if( (setpoint- input) > 0 )
+        {
+          ramp_direction = true;
+        }
+        else
+        {
+          ramp_direction = false;
+        }
+      }
+      else if( (setpoint - sequence[currentStep-1][PARAM_SETPOINT]) >= 0 )
+      {
+        ramp_direction = true;
+      }
+      else
+      {
+        ramp_direction = false;
+      }
+        
+  
+      output = windowSize;
+  
+      State = STATE_RAMP;
+  
+      if ( customGainsON )
+      {
+        kp = sequenceGains[currentStep][0];
+        ki = sequenceGains[currentStep][1];
+        kd = sequenceGains[currentStep][2];
+  
+        controllerPID.SetTunings( kp, ki, kd );
+      }
     }
   }
   else
@@ -594,6 +654,11 @@ void processSerial() {
           Serial.print(rate);
           Serial.print('\n');
           break;
+        case 14: //get direction
+          Serial.print("3,14,");
+          Serial.print(ramp_direction);
+          Serial.print('\n');
+          break;
       }
 
 
@@ -604,6 +669,10 @@ void processSerial() {
       action = atoi(command);
       switch (action)
       {
+        case 2: // Mode 
+          command = strtok(0, ",");
+          Mode = atoi(command);
+          break;
         case 3: // State INACTIVE, ...
           command = strtok(0, ",");
           State = atoi(command);
