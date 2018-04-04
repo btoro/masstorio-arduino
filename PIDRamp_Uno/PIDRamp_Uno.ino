@@ -388,8 +388,17 @@ void loop()
 				{
 					currentStep = currentStep + 1;
 					setpoint = calculateNextSetPoint();
-					controllerPID.SetMode( AUTOMATIC );
-					timerStep = millis() +(rateTime * 1000);
+					
+					if( setpoint > endTemp )
+					{
+						Status = STATUS_COMPLETE;
+						State = STATE_INACTIVE;	
+					}
+					else
+					{
+						controllerPID.SetMode( AUTOMATIC );
+						timerStep = millis() +(rateTime * 1000);
+					}
 				}
 				break;
 			case STATE_ACTIVE:
