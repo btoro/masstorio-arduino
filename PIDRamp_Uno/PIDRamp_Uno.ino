@@ -137,6 +137,9 @@ double rateMain = 0;
 double startTemp = 0;
 double endTemp = 0;
 double rateTime;
+double holdTime;
+double holdTolerance = 0.1;
+
 
 // Used to calculate current setpoint for ramp; Generated at the start of each constant ramp program
 double rateConst = 0;
@@ -391,11 +394,10 @@ void loop()
 				break;
 			case STATE_ACTIVE:
 				error =  setpoint - input;
-				// 0.1 is tolerance
-				if ( abs(error) < 0.1 )
+				if ( abs(error) < holdTolerance )
 				{
 					// 120 is stabilization time
-					timerStep = millis() +(120 * 1000);
+					timerStep = millis() +( holdTime * 1000);
 					State = STATE_RAMP;
 				}
 				break;			
@@ -800,6 +802,8 @@ void processSerial() {
           startTemp = strtod(strtok(0, ","), NULL);
           endTemp = strtod(strtok(0, ","), NULL);
           samplesPerMin = atoi(strtok(0, ","));
+          holdTime = strtod(strtok(0, ","), NULL);
+          holdTolerance = strtod(strtok(0, ","), NULL);
           break;		  
 		  
       }
