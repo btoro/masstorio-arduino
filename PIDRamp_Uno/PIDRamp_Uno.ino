@@ -378,15 +378,27 @@ void loop()
         }
       break;
       case MODE_RATE:
-        if( State == STATE_RAMP )
+        switch(State)
         {
-			if (millis() > timerStep) // Step is comlete
-			{
-				currentStep = currentStep + 1;
-				setpoint = calculateNextSetPoint();
-				controllerPID.SetMode( AUTOMATIC );
-				timerStep = millis() +(rateTime * 1000);
-			}
+			case STATE_RAMP:
+				if (millis() > timerStep) // Step is comlete
+				{
+					currentStep = currentStep + 1;
+					setpoint = calculateNextSetPoint();
+					controllerPID.SetMode( AUTOMATIC );
+					timerStep = millis() +(rateTime * 1000);
+				}
+				break;
+			case STATE_ACTIVE:
+				error =  setpoint - input;
+				// 0.1 is tolerance
+				if ( abs(error) < 0.1 )
+				{
+					// 120 is stabilization time
+					timerStep = millis() +(120 * 1000);
+					State = STATE_RAMP;
+				}
+				break;			
         }
       break;
     }
@@ -559,7 +571,7 @@ void initateConstantRate()
 	ramp_direction = true;
 	
 	Status = STATUS_ON;
-	State = STATE_RAMP;
+	State = STATE_ACTIVE;
 
 	
 }
