@@ -53,7 +53,7 @@ typedef enum SEQUENCE_PARAMS
 #define SENSOR_SAMPLING_TIME 200
 #define CYCLE_TIME 1000
 #define MAX_SEQUENCE_LENGTH 20  
-#define MAX_TEMP 105
+#define MAX_TEMP 120
 #define MIN_TEMP -200
 #define RATE_SAMPLE_POINTS 10
 // ***** PID PARAMETERS *****
@@ -101,9 +101,13 @@ PID controllerPID(&input, &output, &setpoint, kp, ki, kd, DIRECT, P_ON_M);
 
 
 // Temperature Reading Constants
-const float A_value = 1.285E-3;
-const float B_value = 2.362E-4;
-const float C_value = 9.285E-8;
+//const float A_value = 1.285E-3;
+//const float B_value = 2.362E-4;
+///const float C_value = 9.285E-8;
+const float A_value = 1.032E-3;
+const float B_value = 2.387E-4;
+const float C_value = 1.580E-7;
+
 const double SERIESRESISTOR = 10000;
 double calibrationFactor = 0.0;
 
@@ -412,6 +416,13 @@ void loop()
 				break;			
         }
       break;
+	
+      case MODE_ISOTHERMAL:
+	
+	
+	
+      break;
+ 
     }
     //SSR control
       if ( millis() > timerCycle)
@@ -564,6 +575,14 @@ void initiateSoak()
   timerStep = millis() + (sequence[currentStep][PARAM_SOAKTIME] * 1000);
 }
 
+void initateIsothermal()
+{
+	ramp_direction = true;
+	controllerPID.SetMode( AUTOMATIC );
+	Status = STATUS_ON;
+
+}
+
 
 void initateConstantRate()
 {
@@ -660,6 +679,12 @@ void processSerial() {
           Serial.print(kd);
           Serial.print('\n');
           break;
+		  
+        case 9: //Mode
+          Serial.print("3,9,");
+          Serial.print(Mode);
+          Serial.print('\n');
+          break;
         case 10:
           int id, param;
 
@@ -733,6 +758,10 @@ void processSerial() {
           else if (( Status == STATUS_INITIATE ) & (Mode == MODE_RATE) )
 		  {
 			initateConstantRate(); 
+		  }
+		  else if (( Status == STATUS_INITIATE ) & (Mode == MODE_ISOTHERMAL) )
+		  {
+			initateIsothermal(); 
 		  }
           else if ( Status == STATUS_OFF) output = 0;
           break;
