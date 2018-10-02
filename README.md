@@ -16,9 +16,15 @@ Another relay was used to regulate a water circulator for cooling applications. 
 ## Operating modes
 Three main operation modes are present:
 
-1. Isothermal control 
-2. Ramp-soak control
-3. Constant-rate ramp control
+### 1. Isothermal control 
+
+![image](https://user-images.githubusercontent.com/15056753/46376943-5bdce580-c665-11e8-9255-f4c3d025f42e.png)
+
+### 2. Ramp-soak control
+
+![image](https://user-images.githubusercontent.com/15056753/46376947-60090300-c665-11e8-8e58-3e708f890928.png)
+
+### 3. Constant-rate ramp control
 
 
 
