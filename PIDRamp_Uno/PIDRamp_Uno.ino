@@ -4,6 +4,7 @@
 #include <eRCaGuy_NewAnalogRead.h>
 
 //ADC Oversampling -- Ideally, this needs to be replaced with a better hardware ADC...
+//You can definitely choose to not use this. It is absolutely not essential.
 ADC_prescaler_t ADCSpeed = ADC_FAST;
 byte bitsOfResolution = 12; //commanded oversampled resolution
 unsigned long numSamplesToAvg = 5; //number of samples AT THE OVERSAMPLED RESOLUTION that you want to take and average
@@ -101,6 +102,8 @@ PID controllerPID(&input, &output, &setpoint, kp, ki, kd, DIRECT, P_ON_M);
 
 
 // Temperature Reading Constants
+// You must set the constants to match your thermistor
+
 //const float A_value = 1.285E-3;
 //const float B_value = 2.362E-4;
 ///const float C_value = 9.285E-8;
@@ -121,7 +124,6 @@ size_t readBufOffset = 0;
 
 
 //Ramp Soak
-
 double sequence[MAX_SEQUENCE_LENGTH][5];
 double sequenceGains[MAX_SEQUENCE_LENGTH][3];
 
@@ -175,9 +177,6 @@ void setup()
   pinMode(ssrPin2, OUTPUT);
 
   // LED pins initialization and turn on upon start-up (active low)
-//  digitalWrite(ledRedPin, LOW);
-//  pinMode(ledRedPin, OUTPUT);
-
   pinMode(chillerPin, OUTPUT);
   digitalWrite(chillerPin, LOW);
 
@@ -282,38 +281,8 @@ void loop()
             if ( abs(error) < sequence[currentStep][PARAM_RC2] )
             {
                 output = 0;
-    //
-    //          if( sequence[currentStep][PARAM_PAUSETIME] > 0 )
-    //          {
-                initatePause( sequence[currentStep][PARAM_PAUSETIME] );
-    //          }
-    //          else
-    //          {
-    //            if( ramp_direction ) // Going UP
-    //            {
-    //              controllerPID.SetMode( AUTOMATIC );
-    //              ramp_direction = true;
-    //              initiateSoak();
-    //            }
-    //            else // If we are cooling, then extend pause until we are at or below SP
-    //            {
-    //              error = input - setpoint;
-    //              if( error <= 0.5 )
-    //              {
-    //                controllerPID.SetMode( AUTOMATIC );
-    //                ramp_direction = true;
-    //                initiateSoak();
-    //              }            
-    //            }
-    //          }
-    
-                
-    
-    //          if( ~ramp_direction ) // if we were cooling and reached the difference
-    //          {
-    //            digitalWrite(chillerPin, LOW);
-    //          }
-              
+
+                initatePause( sequence[currentStep][PARAM_PAUSETIME] );              
             }
             else if ( abs(error) < sequence[currentStep][PARAM_RC1])
             {
@@ -354,7 +323,6 @@ void loop()
             break;
           case STATE_SOAK:
             // If micro soak temperature is achieved
-            //controllerPID.SetMode( AUTOMATIC );
             if (millis() > timerStep) // Soak is complete
             {
               if ( (currentStep+1) <= totalSteps )
@@ -454,10 +422,6 @@ void loop()
     }
     else
     {
-//      if( ~direction ) // HEATING
-//      {
-//        digitalWrite(chillerPin, LOW);
-//      }
       digitalWrite(ssrPin, LOW);
       digitalWrite(ssrPin2, LOW);
 
