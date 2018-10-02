@@ -13,6 +13,15 @@ Solid-state relays were used to control cartridge heaters. Only on-off control i
 
 Another relay was used to regulate a water circulator for cooling applications. You can ignore/omit this. It is not integral to the temperature-regulation operations. 
 
+## Operating modes
+Three main operation modes are present:
+
+1. Isothermal control 
+2. Ramp-soak control
+3. Constant-rate ramp control
+
+
+
 ## Communication with the controller
 
 Serial communication with the controller can be established with a baudrate of 57600
@@ -126,5 +135,5 @@ This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md
 
 ## Acknowledgements
 
-This was influcenced by ...
+This was influenced by ...
 
